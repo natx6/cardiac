@@ -1,6 +1,6 @@
 name: Build installers
 
-# Builds Windows (.exe, NSIS), macOS (.dmg, Apple Silicon) and Linux (AppImage/.deb)
+# Builds Windows (.exe, NSIS), macOS (.dmg, Apple Silicon) and Linux (AppImage/.deb/.rpm)
 # installers. Intel (x64) macOS is intentionally not built: GitHub retired the
 # macos-13 Intel runners (Dec 2025) and their replacement has the same fate.
 # Trigger manually from the Actions tab and download the installers from the
@@ -40,7 +40,7 @@ jobs:
           - platform: windows-latest
             bundles: nsis
           - platform: ubuntu-22.04
-            bundles: appimage,deb
+            bundles: appimage,deb,rpm
           # 'app' is what produces the signed .app.tar.gz the updater needs on
           # macOS ('dmg' alone is not an updater target — the build warns about it).
           - platform: macos-latest
@@ -133,6 +133,7 @@ jobs:
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
             src-tauri/target/release/bundle/nsis/*.sig
             src-tauri/target/release/bundle/macos/*.sig
             src-tauri/target/release/bundle/appimage/*.sig
@@ -236,7 +237,7 @@ jobs:
           fi
           ASSETS=$(find artifacts -type f \
             \( -name '*.exe' -o -name '*.dmg' \
-               -o -name '*.AppImage' -o -name '*.deb' \
+               -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \
                -o -name '*.tar.gz' \))
           if [ -f latest.json ]; then
             ASSETS="$ASSETS latest.json"
