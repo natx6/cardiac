@@ -1,0 +1,64 @@
+name: CI
+
+# Runs on every push and PR — unlike release.yml (which only fires on a
+# version tag or manual dispatch), this is the check that catches a broken
+# commit before it's ever tagged for release. Checks both halves of the
+# stack: the TypeScript build/typecheck and the Rust build/tests.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Version sync check (package.json == tauri.conf.json == Cargo.toml)
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAURI=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          CARGO=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          echo "package.json: $PKG"
+          echo "tauri.conf.json: $TAURI"
+          echo "Cargo.toml: $CARGO"
+          if [ "$PKG" != "$TAURI" ] || [ "$PKG" != "$CARGO" ]; then
+            echo "::error::Version mismatch — package.json ($PKG) / tauri.conf.json ($TAURI) / Cargo.toml ($CARGO) must match. Run: npm run bump -- $PKG"
+            exit 1
+          fi
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Linux system deps (webkit2gtk, SQLCipher crypto)
+        run: |
+          sudo apt-get update
+          # libssl-dev/pkg-config: SQLCipher links the system OpenSSL provider.
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf pkg-config libssl-dev
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test

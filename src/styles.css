@@ -1,0 +1,315 @@
+@import "tailwindcss";
+
+/* Self-hosted fonts — offline-safe, no Google Fonts at runtime. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Material Symbols Outlined";
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url("/fonts/material-symbols.woff2") format("woff2");
+}
+
+@theme {
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-primary: #0060a8;
+  --color-outline-variant: #b9c6dc;
+  --color-surface-bright: #f5f9ff;
+  --color-secondary-container: #dae2fd;
+  --color-on-primary-fixed-variant: #004b7c;
+  --color-on-primary: #ffffff;
+  --color-on-secondary-fixed: #131b2e;
+  --color-surface-container-low: #edf3fc;
+  --color-on-surface: #151b26;
+  --color-tertiary-container: #fc7c78;
+  --color-tertiary: #a43a3a;
+  --color-on-tertiary-fixed-variant: #842225;
+  --color-on-error-container: #93000a;
+  --color-primary-fixed: #a9cffa;
+  --color-secondary: #565e74;
+  --color-on-secondary-container: #5c647a;
+  --color-primary-fixed-dim: #7fb3f5;
+  --color-background: #f5f9ff;
+  --color-secondary-fixed-dim: #bec6e0;
+  --color-tertiary-fixed-dim: #ffb3af;
+  --color-on-tertiary-fixed: #410005;
+  --color-on-background: #151b26;
+  --color-inverse-on-surface: #e9eef7;
+  --color-surface: #f5f9ff;
+  --color-on-primary-fixed: #001a33;
+  --color-on-surface-variant: #3d4759;
+  --color-surface-variant: #dbe2ef;
+  --color-surface-container-high: #e0e7f2;
+  --color-primary-container: #3b82f6;
+  --color-inverse-surface: #2a3040;
+  --color-secondary-fixed: #dae2fd;
+  --color-surface-container-highest: #dbe2ef;
+  --color-outline: #67748a;
+  --color-surface-container: #e6edf7;
+  --color-surface-tint: #0060a8;
+  --color-surface-dim: #d3dbe8;
+  --color-surface-container-lowest: #ffffff;
+  --color-on-secondary-fixed-variant: #3f465c;
+  --color-inverse-primary: #8ab8f8;
+  --color-error-container: #ffdad6;
+  --color-on-secondary: #ffffff;
+  --color-on-tertiary: #ffffff;
+  --color-on-primary-container: #001d35;
+  --color-on-tertiary-container: #711419;
+  --color-tertiary-fixed: #ffdad7;
+
+  --font-body-md: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-data-mono: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+
+  --text-label-md: 12px;
+  --text-label-md--line-height: 16px;
+  --text-label-md--letter-spacing: 0.05em;
+  --text-label-md--font-weight: 600;
+  --text-body-md: 14px;
+  --text-body-md--line-height: 20px;
+  --text-body-md--font-weight: 400;
+  --text-data-mono: 13px;
+  --text-data-mono--line-height: 18px;
+  --text-data-mono--font-weight: 500;
+  --text-headline-md: 18px;
+  --text-headline-md--line-height: 24px;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 600;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 18px;
+  --text-body-sm--font-weight: 400;
+  --text-headline-lg: 24px;
+  --text-headline-lg--line-height: 32px;
+  --text-headline-lg--letter-spacing: -0.02em;
+  --text-headline-lg--font-weight: 700;
+  --text-shortcut-hint: 11px;
+  --text-shortcut-hint--line-height: 14px;
+  --text-shortcut-hint--font-weight: 700;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+  --text-body-lg--font-weight: 400;
+
+  --spacing-margin-page: 24px;
+  --spacing-gutter: 12px;
+  --spacing-density-medium: 16px;
+  --spacing-density-high: 8px;
+  --spacing-unit: 4px;
+
+  --radius-lg: 0.25rem;
+  --radius-xl: 0.5rem;
+  --radius-full: 0.75rem;
+}
+
+/* Dark mode: neutral gray surfaces, blue only for accents. */
+.dark {
+  --color-primary: #a8c7fa;
+  --color-on-primary: #0a305f;
+  --color-primary-container: #00497e;
+  --color-on-primary-container: #d1e4ff;
+  --color-primary-fixed: #d1e4ff;
+  --color-primary-fixed-dim: #a8c7fa;
+  --color-on-primary-fixed: #001d35;
+  /* Hover for primary buttons: lighter blue, not darker. */
+  --color-on-primary-fixed-variant: #d1e4ff;
+
+  --color-secondary: #bfc9d4;
+  --color-on-secondary: #283139;
+  --color-secondary-container: #3e4750;
+  --color-on-secondary-container: #dbe4f0;
+  --color-secondary-fixed: #dbe4f0;
+  --color-secondary-fixed-dim: #bfc9d4;
+  --color-on-secondary-fixed: #101c24;
+  --color-on-secondary-fixed-variant: #3e4750;
+
+  --color-tertiary: #debcbb;
+  --color-on-tertiary: #442626;
+  --color-tertiary-container: #5d3c3b;
+  --color-on-tertiary-container: #fdd9d7;
+  --color-tertiary-fixed: #fdd9d7;
+  --color-tertiary-fixed-dim: #debcbb;
+  --color-on-tertiary-fixed: #2d1111;
+  --color-on-tertiary-fixed-variant: #5d3c3b;
+
+  --color-error: #ffb4ab;
+  --color-on-error: #690005;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
+
+  /* Surfaces: neutral grays — no green tint. */
+  --color-surface: #111318;
+  --color-on-surface: #e1e3e8;
+  --color-surface-variant: #43474e;
+  --color-on-surface-variant: #c3c7cf;
+  --color-surface-container-lowest: #0c0e13;
+  --color-surface-container-low: #191c20;
+  --color-surface-container: #1d2024;
+  --color-surface-container-high: #282a2f;
+  --color-surface-container-highest: #33353a;
+  --color-surface-bright: #3b3d42;
+  --color-surface-dim: #111318;
+  --color-surface-tint: #a8c7fa;
+
+  --color-background: #111318;
+  --color-on-background: #e1e3e8;
+
+  --color-outline: #8d9199;
+  --color-outline-variant: #43474e;
+
+  --color-inverse-surface: #e1e3e8;
+  --color-inverse-on-surface: #2e3036;
+  --color-inverse-primary: #0060a8;
+}
+
+/* Dark-mode-aware semantic colors — use these instead of hardcoded hex. */
+@utility bg-warn-subtle { @apply bg-[#fef08a]/20 dark:bg-[#fbbf24]/15; }
+@utility bg-warn-muted { @apply bg-[#fef08a]/40 dark:bg-[#fbbf24]/20; }
+@utility bg-warn-soft { @apply bg-[#fef08a]/60 dark:bg-[#fbbf24]/25; }
+@utility text-warn { @apply text-[#854d0e] dark:text-[#fbbf24]; }
+@utility border-warn { @apply border-[#fef08a] dark:border-[#fbbf24]/40; }
+@utility bg-warn-deep { @apply bg-[#b45309] dark:bg-[#d97706]; }
+@utility bg-success-subtle { @apply bg-[#dbeafe]/60 dark:bg-[#3b82f6]/15; }
+@utility text-success { @apply text-[#1d4ed8] dark:text-[#60a5fa]; }
+@utility bg-danger-deep { @apply bg-[#7f1d1d] dark:bg-[#dc2626]/30; }
+@utility bg-surface-select { @apply bg-surface-container-lowest dark:bg-surface-container-high; }
+@utility text-surface-select { @apply text-on-surface dark:text-on-surface; }
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
+
+/* Make native <select> and <option> readable in dark mode. */
+.dark select,
+.dark select option {
+  color-scheme: dark;
+}
+
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  user-select: none;
+}
+.material-symbols-outlined.filled {
+  font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #bbcabf;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8fa398;
+}
+
+/* Print: only the receipt, label, or PO form area */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #receipt-area,
+  #receipt-area *,
+  #label-area,
+  #label-area *,
+  #po-area,
+  #po-area * {
+    visibility: visible;
+  }
+  #receipt-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    max-width: 80mm;
+    padding: 4mm;
+    background: #fff;
+    color: #000;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  #label-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 60mm;
+    max-width: 60mm;
+    padding: 3mm;
+    background: #fff;
+    color: #000;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  #po-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 190mm;
+    background: #fff;
+    color: #000;
+  }
+  /* Thermal printer: set paper width and margins. */
+  @page {
+    size: 80mm auto;
+    margin: 2mm;
+  }
+  /* Hide browser UI when printing receipts. */
+  @page:first {
+    margin: 2mm;
+  }
+}
+
+/* Attention cardiac used to spotlight a specific row after following a
+ * notification deep-link (e.g. a low-stock product in Inventory). Blinks
+ * repeatedly, then the highlight is cleared by the page after a few seconds. */
+@keyframes pulse-flash {
+  0%,
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    background-color: color-mix(in srgb, var(--color-primary) 28%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 70%, transparent);
+  }
+}
+.flash-row {
+  animation: pulse-flash 0.2s ease-in-out infinite;
+  border-radius: 8px;
+}

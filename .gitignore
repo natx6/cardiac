@@ -1,0 +1,16 @@
+node_modules
+dist
+src-tauri/target
+src-tauri/gen
+*.log
+.DS_Store
+
+# Local data & secrets — never commit these
+*.db
+*.sqlite
+*.sqlite-*
+*.db-wal
+*.db-shm
+.env
+.env.*
+*.bak

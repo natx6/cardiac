@@ -1,0 +1,246 @@
+name: Build installers
+
+# Builds Windows (.exe, NSIS), macOS (.dmg, Apple Silicon) and Linux (AppImage/.deb)
+# installers. Intel (x64) macOS is intentionally not built: GitHub retired the
+# macos-13 Intel runners (Dec 2025) and their replacement has the same fate.
+# Trigger manually from the Actions tab and download the installers from the
+# run's artifacts; or push a tag like v0.2.0 to also create a draft GitHub
+# Release with everything attached.
+#
+# Auto-update: when the TAURI_SIGNING_PRIVATE_KEY secret is set, builds also
+# produce signed updater artifacts (`.sig` files) and the release job assembles
+# `latest.json` — the manifest the installed app polls on launch. Publish the
+# draft release to roll the update out to every installed copy.
+#
+# The tauri CLI downloads WiX/NSIS/linuxdeploy from GitHub release endpoints
+# while bundling; those downloads occasionally drop ("io: Peer disconnected").
+# The build step retries — retries reuse the same runner, so the compiled
+# binary and any already-downloaded tools are cached and bundling just reruns.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  # Stacked pushes on the same tag/ref cancel the superseded build instead of
+  # queueing redundant full Rust compiles.
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+# Needed so the runner's GITHUB_TOKEN can create the draft release and attach
+# installers (default token is read-only in this repo).
+jobs:
+  build:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            bundles: nsis
+          - platform: ubuntu-22.04
+            bundles: appimage,deb
+          # 'app' is what produces the signed .app.tar.gz the updater needs on
+          # macOS ('dmg' alone is not an updater target — the build warns about it).
+          - platform: macos-latest
+            bundles: app,dmg
+    runs-on: ${{ matrix.platform }}
+    env:
+      # createUpdaterArtifacts is on permanently in tauri.conf.json, so every
+      # release build produces signed updater artifacts (.sig files) as long as
+      # the signing key is present in the repo secrets. If the secret is ever
+      # missing, the build fails loudly instead of silently shipping unsigned
+      # installers.
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Linux system deps (webkit2gtk)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      # SQLCipher's crypto provider: system OpenSSL on Unix (pkg-config finds
+      # it on Ubuntu out of the box; Homebrew's openssl@3 is keg-only on macOS
+      # so its .pc path must be handed over explicitly). Windows has no
+      # system-wide OpenSSL, so the build vendors it — perl only, no nasm.
+      - name: Point pkg-config at OpenSSL (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> "$GITHUB_ENV"
+
+      # Vendored OpenSSL (Windows) builds from source and needs a full Perl.
+      # Strawberry Perl is preinstalled on the runner but NOT first on PATH —
+      # the MSYS /usr/bin/perl found first lacks Locale::Maketext::Simple.
+      - name: Prefer Strawberry Perl (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $sp = "C:\Strawberry\perl\bin"
+          if (-not (Test-Path "$sp\perl.exe")) { choco install strawberryperl -y --no-progress }
+          echo $sp | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - run: npm ci
+
+      - name: Build installers (retries on flaky tool downloads)
+        shell: bash
+        env:
+          OPENSSL_NO_ASM: ${{ matrix.platform == 'windows-latest' && '1' || '' }}
+          # shell:bash on Windows puts MSYS's stripped-down perl (/usr/bin)
+          # ahead of everything on PATH, and that perl lacks
+          # Locale::Maketext::Simple so vendored OpenSSL can't Configure.
+          # openssl-sys honours the PERL variable — point it at Strawberry.
+          PERL: C:\Strawberry\perl\bin\perl.exe
+        run: |
+          set +e
+          for i in 1 2 3 4; do
+            echo "::group::tauri build attempt $i"
+            npm run tauri build -- --bundles ${{ matrix.bundles }}
+            rc=$?
+            echo "::endgroup::"
+            if [ $rc -eq 0 ]; then
+              echo "Build succeeded on attempt $i"
+              exit 0
+            fi
+            echo "attempt $i failed (exit $rc) — retrying"
+            sleep 5
+          done
+          echo "All 4 attempts failed"
+          exit 1
+
+      - name: Upload installers + update signatures
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.platform }}
+          # One plain glob per line — @actions/glob does NOT support {..} braces.
+          # Only AppImage (Linux) and app.tar.gz (macOS) and nsis (Windows) are
+          # updater targets; deb/dmg are manual installers, not auto-update.
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/nsis/*.sig
+            src-tauri/target/release/bundle/macos/*.sig
+            src-tauri/target/release/bundle/appimage/*.sig
+            # macOS updater bundle only — NOT deb internals (control/data.tar.gz)
+            src-tauri/target/release/bundle/macos/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    # Only this job touches releases — the build matrix stays read-only.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # latest.json is what installed apps poll. Each .sig file produced by the
+      # signed build becomes one platform entry; the URL points at the matching
+      # installer attached to this same release.
+      - name: Assemble update manifest (latest.json)
+        run: |
+          python3 - <<'PY'
+          import json, os, datetime
+
+          tag = os.environ["GITHUB_REF_NAME"]
+          version = tag.lstrip("v")
+          base_url = f"https://github.com/natx6/cardiac/releases/download/{tag}"
+
+          def platform_key(name):
+              n = name.lower()
+              if "x64-setup.exe" in n or "x86_64-setup" in n:
+                  return "windows-x86_64"
+              if "x64.app.tar.gz" in n:
+                  return "darwin-x86_64"
+              # Tauri names the macOS updater bundle just "Cardiac.app.tar.gz" (no
+              # arch). macos-latest is Apple Silicon, so map it to darwin-aarch64.
+              if ".app.tar.gz" in n:
+                  return "darwin-aarch64"
+              if "aarch64" in n or "arm64" in n:
+                  if "appimage" in n:
+                      return "linux-arm64"
+                  return "darwin-aarch64"
+              if "amd64.appimage" in n or "x86_64.appimage" in n:
+                  return "linux-x86_64"
+              if "i686" in n:
+                  return "linux-i686"
+              return None
+
+          platforms = {}
+          for dirpath, _, files in os.walk("artifacts"):
+              for f in sorted(files):
+                  if not f.endswith(".sig"):
+                      continue
+                  # dmg is a manual installer, not an updater target
+                  if f.endswith(".dmg.sig"):
+                      continue
+                  target = f[:-4]
+                  key = platform_key(f)
+                  if not key:
+                      print(f"WARN: no platform mapping for {f}")
+                      continue
+                  with open(os.path.join(dirpath, f)) as fh:
+                      sig = fh.read().strip()
+                  platforms[key] = {
+                      "signature": sig,
+                      "url": f"{base_url}/{target}",
+                  }
+
+          if not platforms:
+              print("No updater signatures found — skipping latest.json")
+              raise SystemExit(0)
+
+          manifest = {
+              "version": version,
+              "notes": f"Cardiac v{version} — auto-built installers.",
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": platforms,
+          }
+          with open("latest.json", "w") as fh:
+              json.dump(manifest, fh, indent=2)
+          print(open("latest.json").read())
+          PY
+
+      - name: Draft release (tag pushes only)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          # The updater compares manifest version to the built binary — a tag
+          # that doesn't match the conf would break updates silently.
+          if [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} != tauri.conf version v${VERSION} — bump the conf or retag"
+            exit 1
+          fi
+          ASSETS=$(find artifacts -type f \
+            \( -name '*.exe' -o -name '*.dmg' \
+               -o -name '*.AppImage' -o -name '*.deb' \
+               -o -name '*.tar.gz' \))
+          if [ -f latest.json ]; then
+            ASSETS="$ASSETS latest.json"
+          fi
+          gh release create "v${VERSION}" --draft --title "Cardiac v${VERSION}" \
+            --notes "Auto-built installers for testing. Publish this release to roll the update out." \
+            $ASSETS
