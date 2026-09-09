@@ -6,5 +6,5 @@ ALTER TABLE suppliers ADD COLUMN email TEXT;
 -- cards, cart lines and receipts.
 ALTER TABLE products ADD COLUMN dosage_form TEXT;
 ALTER TABLE products ADD COLUMN route TEXT;
--- Roles move to owner/manager/mca: existing worker accounts become mca.
-UPDATE users SET role = 'mca' WHERE role = 'worker';
+-- Role rewrite worker->mca lives in 0035 (table rebuild): an in-place UPDATE
+-- here would violate the old users CHECK constraint on existing databases.

@@ -4535,6 +4535,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0034_supplier_email_product_form_route_role_mca",
         include_str!("../migrations/0034_supplier_email_product_form_route_role_mca.sql"),
     ),
+    (
+        "0035_users_owner_manager_mca",
+        include_str!("../migrations/0035_users_owner_manager_mca.sql"),
+    ),
 ];
 
 /// Apply pending migrations with PRAGMA user_version as the version tracker.
@@ -5636,6 +5640,29 @@ mod tests {
         assert_eq!(fs::read(conf.join("cardiac.db")).unwrap(), b"RESTORED-DB");
         assert_eq!(fs::read_to_string(conf.join("cardiac.key")).unwrap(), "new-key");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// REGRESSION: the users CHECK constraint must admit the owner/manager/mca
+    /// model — adding an MCA used to fail with
+    /// "CHECK constraint failed: role IN ('manager','worker')".
+    #[test]
+    fn users_accept_owner_manager_mca_roles() {
+        let conn = test_db();
+        for role in ["owner", "manager", "mca"] {
+            conn.execute(
+                "INSERT INTO users (username, display_name, password_hash, role, is_active, must_change_password) VALUES (?1, ?2, 'x', ?3, 1, 0)",
+                rusqlite::params![format!("u_{role}"), role, role],
+            )
+            .unwrap_or_else(|e| panic!("role '{role}' must be insertable: {e}"));
+        }
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM users WHERE role IN ('owner','manager','mca')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 3);
     }
 
     #[test]
