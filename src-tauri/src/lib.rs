@@ -2897,6 +2897,53 @@ fn commit_supplier_import(
     })
 }
 
+/// Load the bundled sample dataset (starter catalog + Ghana range + DMO
+/// sales + demo supplier/purchase) for evaluation and sales demos. Runs in
+/// one transaction; every statement is idempotent (INSERT OR IGNORE / NOT
+/// EXISTS guards, barcode-resolved line items), so re-running never
+/// duplicates. Never runs at startup — only from Settings → Sample data.
+const DEMO_SEED_SQL: &str = include_str!("../demo_seed.sql");
+
+#[tauri::command]
+fn seed_demo_data(
+    app: AppHandle,
+    operator: Option<String>,
+    role: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut conn = open_db(&app)?;
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    exec_migration(&tx, DEMO_SEED_SQL)?;
+    let products: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM products WHERE barcode LIKE '6220000000%' OR name LIKE 'Demo —%'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let sales: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM sales WHERE receipt_no LIKE 'DMO-%'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let detail = format!("sample data loaded — {products} products, {sales} sales");
+    log_audit(
+        &tx,
+        &operator,
+        &role,
+        "demo.seeded",
+        Some("demo"),
+        None,
+        None,
+        Some(&detail),
+    )?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "products": products, "sales": sales }))
+}
+
 /// Remove all sample/demo data in one transaction so a database can be handed
 /// to a real client clean. Targets only the clearly-fake rows the seed created:
 ///   - sales with a DMO- receipt prefix (and their items + payments)
@@ -4697,6 +4744,7 @@ pub fn run() {
             commit_stock_import,
             commit_customer_import,
             commit_supplier_import,
+            seed_demo_data,
             save_purchase,
             receive_purchase,
             update_purchase,
@@ -5663,6 +5711,42 @@ mod tests {
             )
             .unwrap();
         assert_eq!(n, 3);
+    }
+
+    /// Seed runs through the same splitter as migrations and must be
+    /// re-runnable without duplicating or mislinking rows.
+    #[test]
+    fn seed_demo_data_is_idempotent() {
+        let mut conn = test_db();
+        for _ in 0..2 {
+            let tx = conn.transaction().expect("begin");
+            exec_migration(&tx, DEMO_SEED_SQL).expect("seed applies");
+            tx.commit().expect("commit");
+        }
+        let products: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM products WHERE barcode LIKE '6220000000%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(products >= 60, "seed catalog should hold 60+ products, got {products}");
+        let sales: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sales WHERE receipt_no LIKE 'DMO-%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(sales, 3, "exactly 3 sample sales, no duplicates");
+        let orphans: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sale_items si LEFT JOIN products p ON p.id = si.product_id WHERE si.sale_id IN (SELECT id FROM sales WHERE receipt_no LIKE 'DMO-%') AND p.id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphans, 0, "every sample line must link a real product");
     }
 
     #[test]

@@ -794,6 +794,15 @@ export async function commitSupplierImport(
   return await invoke("commit_supplier_import", { records, operator: operator ?? null, role: role ?? null });
 }
 
+/** Load the bundled sample dataset (catalog + DMO sales + demo supplier) in
+ * one transaction. Idempotent — safe to re-run, never duplicates. */
+export async function seedDemoData(
+  operator?: string | null,
+  role?: string | null,
+): Promise<{ products: number; sales: number }> {
+  return await invoke("seed_demo_data", { operator: operator ?? null, role: role ?? null });
+}
+
 export interface DemoPurgeSummary {
   sales: number;
   purchases: number;

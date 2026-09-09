@@ -16,6 +16,7 @@ import {
   createUser,
   updateUser,
   resetUserPassword,
+  seedDemoData,
 } from "../db";
 import type { AppUser, BackupInfo, UserRole } from "../db";
 import { beep } from "../lib/audio";
@@ -69,6 +70,36 @@ export function SettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("mca");
   const [usersErr, setUsersErr] = useState("");
+  /** Sample data seeding (evaluation/demo only, never runs at startup). */
+  const [seedArm, setSeedArm] = useState(false);
+  const [seedBusy, setSeedBusy] = useState(false);
+  const [seedMsg, setSeedMsg] = useState("");
+
+  const doSeed = async () => {
+    if (!seedArm) {
+      // First tap arms; the second commits. Resets after 5s of inaction.
+      setSeedArm(true);
+      window.setTimeout(() => setSeedArm(false), 5000);
+      return;
+    }
+    setSeedArm(false);
+    setSeedBusy(true);
+    setSeedMsg("");
+    try {
+      const r = await seedDemoData(
+        currentUser?.display_name ?? null,
+        currentUser?.role ?? null,
+      );
+      await useStore.getState().refreshProducts();
+      beep(true);
+      setSeedMsg(`Sample data loaded — ${r.products} products, ${r.sales} sales. Safe to re-run; never duplicates.`);
+    } catch (e) {
+      setSeedMsg(String(e).replace(/^Error: /, ""));
+      beep(false);
+    } finally {
+      setSeedBusy(false);
+    }
+  };
 
   /** Flash-drive restore awaiting its manager-PIN confirmation. */
   const [pinDriveRestore, setPinDriveRestore] = useState<string | null>(null);
@@ -613,6 +644,29 @@ export function SettingsPage() {
               >
                 Add login
               </button>
+            </div>
+          </div>
+        )}
+
+        {isManager && (
+          <div className="mb-6 rounded-xl border border-outline-variant bg-surface p-4">
+            <h3 className="mb-3 text-headline-md font-headline-md text-on-surface">Sample data</h3>
+            <p className="mb-3 text-body-sm text-on-surface-variant">
+              Load the bundled evaluation catalog (~66 products, 3 sample sales, a demo
+              supplier order). For testing and sales demos only — never runs on its own,
+              and re-running won't duplicate anything.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => void doSeed()}
+                disabled={seedBusy}
+                className="rounded bg-primary px-4 py-2 text-label-md font-label-md text-on-primary shadow-sm hover:bg-on-primary-fixed-variant disabled:opacity-50"
+              >
+                {seedBusy ? "Loading…" : seedArm ? "Tap again to confirm" : "Load sample data"}
+              </button>
+              {seedMsg && (
+                <p className="text-body-sm font-body-sm text-on-surface-variant">{seedMsg}</p>
+              )}
             </div>
           </div>
         )}
