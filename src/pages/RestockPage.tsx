@@ -142,12 +142,16 @@ export function RestockPage() {
     setPayMethod("Cash");
     setPayPin("");
     setRecvBusy(false);
+    await loadPayHist(p.id);
+  };
+
+  const loadPayHist = async (purchaseId: string) => {
     try {
       const d = await initDb();
       setPayHist(
         await d.select<{ amount: number; method: string; operator: string | null; timestamp: string }[]>(
           "SELECT amount, method, operator, timestamp FROM purchase_payments WHERE purchase_id = $1 ORDER BY id",
-          [p.id],
+          [purchaseId],
         ),
       );
     } catch {
@@ -620,15 +624,20 @@ export function RestockPage() {
                 >
                   Close
                 </button>
-                {owedOf(detail.p) > 0.005 && (
-                  <button
-                    onClick={() => setPayOpen(true)}
-                    className="flex items-center gap-2 rounded border border-primary/40 bg-primary/5 px-4 py-2 text-label-md font-label-md text-primary hover:bg-primary/10"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">payments</span>
-                    Pay balance
-                  </button>
-                )}
+                {/* One payment door per state: before anything is paid the money
+                    question above is the only control; Pay balance appears
+                    once money has moved (history exists) or after receiving,
+                    and never when fully paid. */}
+                {owedOf(detail.p) > 0.005 &&
+                  (detail.p.status === "Received" || payHist.length > 0) && (
+                    <button
+                      onClick={() => setPayOpen(true)}
+                      className="flex items-center gap-2 rounded border border-primary/40 bg-primary/5 px-4 py-2 text-label-md font-label-md text-primary hover:bg-primary/10"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">payments</span>
+                      Pay balance
+                    </button>
+                  )}
                 {detail.p.status !== "Received" && (
                   <Tip label="Add the received quantities to stock — one transaction">
                     <button
@@ -688,6 +697,8 @@ export function RestockPage() {
             const fresh = await load();
             const upd = fresh.find((x) => x.id === detail.p.id);
             if (upd) setDetail((d) => (d ? { p: upd, items: d.items } : d));
+            // Keep the trail and the Pay balance visibility in sync.
+            await loadPayHist(detail.p.id);
             setMsg(
               `${r.reference_no ?? detail.p.id}: ${fmtMoney(r.paid)} paid${
                 r.balance > 0 ? ` — ${fmtMoney(r.balance)} left` : " — fully paid"

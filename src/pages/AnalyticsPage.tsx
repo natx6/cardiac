@@ -597,84 +597,100 @@ export function AnalyticsPage() {
   const doExport = async () => {
     if (!report) return;
     const rows: string[][] = [];
-    rows.push([`Cardiac Reports — ${rangeLabel}`]);
+    // Each tab exports only what it shows.
+    const isStock = reportTab === "stock";
+    rows.push([`Cardiac Reports (${isStock ? "Stock" : "Financial"}) — ${rangeLabel}`]);
     // MCA exports carry their own scope in the header (and never the
     // business-wide sections below).
     rows.push([`Operator: ${isMca ? selfName : opFilter}`]);
-    rows.push([`Payment: ${methodFilter}`]);
+    if (!isStock) rows.push([`Payment: ${methodFilter}`]);
     rows.push([]);
-    rows.push(["Summary", "Transactions", "Items Sold", "Gross Profit (GH₵)"]);
-    rows.push([
-      report.summary.revenue.toFixed(2),
-      String(report.summary.n),
-      String(report.summary.items),
-      report.summary.profit.toFixed(2),
-    ]);
-    rows.push([]);
-    rows.push(["Returns", "Count", "Refunded (GH₵)", "Net Revenue (GH₵)"]);
-    rows.push([
-      "",
-      String(report.returns.n),
-      report.returns.amount.toFixed(2),
-      Math.max(0, report.summary.revenue - report.returns.amount).toFixed(2),
-    ]);
-    rows.push([]);
-    rows.push(["By Payment", "Revenue (GH₵)", "Count"]);
-    report.byMethod.forEach((m) => rows.push([m.label, m.amt.toFixed(2), String(m.n)]));
-    rows.push([]);
-    rows.push(["By Operator", "Revenue (GH₵)", "Count"]);
-    report.byOperator.forEach((o) => rows.push([o.label, o.amt.toFixed(2), String(o.n)]));
-    rows.push([]);
-    rows.push(["By Category", "Units", "Revenue (GH₵)", "Profit (GH₵)", "Sales"]);
-    report.byCategory.forEach((c) =>
-      rows.push([c.label, String(c.qty), c.amt.toFixed(2), c.profit.toFixed(2), String(c.n)]),
-    );
-    rows.push([]);
-    rows.push(["Top Products", "Units", "Revenue (GH₵)"]);
-    report.top.forEach((t) => rows.push([t.product_name, String(t.qty), t.amt.toFixed(2)]));
-    rows.push([]);
-    rows.push(["Recent Sales", "Method", "Operator", "Total (GH₵)", "Time"]);
-    report.recent.forEach((r) =>
-      rows.push([r.receipt_no, r.payment_method, r.operator ?? "", r.total_amount.toFixed(2), r.timestamp]),
-    );
-    rows.push([]);
-    rows.push(["Slow Movers (no sale in 90 days)", "Stock Qty", "Stock Value (GH₵)"]);
-    report.slow.forEach((s) => rows.push([s.name, String(s.stock_qty), s.value.toFixed(2)]));
+    if (!isStock) {
+      rows.push(["Summary", "Transactions", "Items Sold", "Gross Profit (GH₵)"]);
+      rows.push([
+        report.summary.revenue.toFixed(2),
+        String(report.summary.n),
+        String(report.summary.items),
+        report.summary.profit.toFixed(2),
+      ]);
+      rows.push([]);
+      rows.push(["Returns", "Count", "Refunded (GH₵)", "Net Revenue (GH₵)"]);
+      rows.push([
+        "",
+        String(report.returns.n),
+        report.returns.amount.toFixed(2),
+        Math.max(0, report.summary.revenue - report.returns.amount).toFixed(2),
+      ]);
+      rows.push([]);
+      rows.push(["By Payment", "Revenue (GH₵)", "Count"]);
+      report.byMethod.forEach((m) => rows.push([m.label, m.amt.toFixed(2), String(m.n)]));
+      rows.push([]);
+      rows.push(["By Operator", "Revenue (GH₵)", "Count"]);
+      report.byOperator.forEach((o) => rows.push([o.label, o.amt.toFixed(2), String(o.n)]));
+      rows.push([]);
+      rows.push(["By Category", "Units", "Revenue (GH₵)", "Profit (GH₵)", "Sales"]);
+      report.byCategory.forEach((c) =>
+        rows.push([c.label, String(c.qty), c.amt.toFixed(2), c.profit.toFixed(2), String(c.n)]),
+      );
+      rows.push([]);
+      rows.push(["Top Products", "Units", "Revenue (GH₵)"]);
+      report.top.forEach((t) => rows.push([t.product_name, String(t.qty), t.amt.toFixed(2)]));
+      rows.push([]);
+      rows.push(["Recent Sales", "Method", "Operator", "Total (GH₵)", "Time"]);
+      report.recent.forEach((r) =>
+        rows.push([r.receipt_no, r.payment_method, r.operator ?? "", r.total_amount.toFixed(2), r.timestamp]),
+      );
+    } else {
+      rows.push(["Low Stock", "On Hand", "Reorder Level"]);
+      lowStock.forEach((p) => rows.push([p.name, String(p.stock_qty), String(p.reorder_level)]));
+      rows.push([]);
+      rows.push(["Expiring ≤ 60 days", "Expiry Date", "On Hand"]);
+      expiring.forEach((p) => rows.push([p.name, p.expiry_date ?? "", String(p.stock_qty)]));
+      rows.push([]);
+      rows.push(["Expired", "Expiry Date", "On Hand"]);
+      expired.forEach((p) => rows.push([p.name, p.expiry_date ?? "", String(p.stock_qty)]));
+      rows.push([]);
+      rows.push(["Slow Movers (no sale in 90 days)", "Stock Qty", "Stock Value (GH₵)"]);
+      report.slow.forEach((s) => rows.push([s.name, String(s.stock_qty), s.value.toFixed(2)]));
+    }
     // Business-wide ledgers never leave an MCA's export.
     if (!isMca) {
-      rows.push([]);
-      rows.push(["Controlled Drugs — Register", "Stock", "Received", "Dispensed", "Returned", "Adjusted"]);
-      (controlled?.summary ?? []).forEach((c) =>
-        rows.push([
-          c.name,
-          String(c.stock_qty),
-          String(c.received),
-          String(c.dispensed),
-          String(c.returned),
-          String(c.adjusted),
-        ]),
-      );
-      rows.push([]);
-      rows.push(["Audit Trail", "Operator", "Role", "Amount (GH₵)", "Time", "Detail"]);
-      audit.forEach((a) =>
-        rows.push([
-          a.action,
-          a.operator ?? "",
-          a.role ?? "",
-          a.amount === null ? "" : a.amount.toFixed(2),
-          a.timestamp,
-          a.detail ?? "",
-        ]),
-      );
+      if (!isStock) {
+        rows.push([]);
+        rows.push(["Audit Trail", "Operator", "Role", "Amount (GH₵)", "Time", "Detail"]);
+        audit.forEach((a) =>
+          rows.push([
+            a.action,
+            a.operator ?? "",
+            a.role ?? "",
+            a.amount === null ? "" : a.amount.toFixed(2),
+            a.timestamp,
+            a.detail ?? "",
+          ]),
+        );
+      } else {
+        rows.push([]);
+        rows.push(["Controlled Drugs — Register", "Stock", "Received", "Dispensed", "Returned", "Adjusted"]);
+        (controlled?.summary ?? []).forEach((c) =>
+          rows.push([
+            c.name,
+            String(c.stock_qty),
+            String(c.received),
+            String(c.dispensed),
+            String(c.returned),
+            String(c.adjusted),
+          ]),
+        );
+      }
     }
     try {
       const opForFile = isMca ? selfName : opFilter;
       const opSuffix =
-        opForFile !== "All"
+        !isStock && opForFile !== "All"
           ? `-${opForFile.toLowerCase().replace(/[^a-z0-9]/g, "")}`
           : "";
-      const mSuffix = methodFilter !== "All" ? `-${methodFilter.toLowerCase()}` : "";
-      const fname = `sales-${rangeLabel}${opSuffix}${mSuffix}`
+      const mSuffix = !isStock && methodFilter !== "All" ? `-${methodFilter.toLowerCase()}` : "";
+      const fname = `${isStock ? "stock" : "sales"}-${rangeLabel}${opSuffix}${mSuffix}`
         .toLowerCase()
         .replace(/[^a-z0-9_-]/g, "-");
       const picked = await save({
@@ -888,7 +904,7 @@ export function AnalyticsPage() {
           <button
             onClick={() => void doExport()}
             className="flex items-center gap-2 rounded border border-outline-variant px-3 py-1.5 text-label-md font-label-md text-on-surface transition-colors hover:bg-surface-container-low"
-            title="Write every section to a CSV (choose where to save)"
+            title="Write this tab to a CSV (choose where to save)"
             data-tour="tour-export"
           >
             <span className="material-symbols-outlined text-[16px]">download</span>
