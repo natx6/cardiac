@@ -13,13 +13,18 @@ interface Props {
   tax: number;
   paymentMethod: string;
   payments?: PaymentLine[];
+  /** Sale timestamp — reprints show the sale's own time, not "now". */
+  timestamp?: string | null;
+  patientName?: string | null;
+  operator?: string | null;
   onClose(): void;
 }
 
-export function ReceiptModal({ result, lines, subtotal, discountPct, discountAmt, tax, paymentMethod, payments, onClose }: Props) {
+export function ReceiptModal({ result, lines, subtotal, discountPct, discountAmt, tax, paymentMethod, payments, timestamp, patientName, operator, onClose }: Props) {
   const pharmacyName = useStore((s) => s.pharmacyName);
   const footer = useStore((s) => s.receiptFooter);
   const momoNumber = useStore((s) => s.momoNumber);
+  const when = timestamp || new Date().toLocaleString();
   const paidByMoMo =
     paymentMethod === "MoMo" || (payments ?? []).some((p) => p.method === "MoMo");
 
@@ -44,7 +49,9 @@ export function ReceiptModal({ result, lines, subtotal, discountPct, discountAmt
         port: st.printerPort,
         pharmacy_name: pharmacyName,
         receipt_no: result.receipt_no,
-        timestamp: new Date().toLocaleString(),
+        timestamp: when,
+        customer: patientName?.trim() || null,
+        cashier: operator?.trim() || null,
         lines: lines.map((l) => ({
           name: l.name,
           detail: [l.unit ?? null, `${l.qty} x ${ghs(l.unitPrice)}`].filter(Boolean).join(" · "),
@@ -93,8 +100,18 @@ export function ReceiptModal({ result, lines, subtotal, discountPct, discountAmt
               {result.receipt_no}
             </p>
             <p className="font-data-mono text-data-mono text-on-surface-variant">
-              {new Date().toLocaleString()}
+              {when}
             </p>
+            {patientName && (
+              <p className="font-data-mono text-data-mono text-on-surface-variant">
+                Customer: {patientName}
+              </p>
+            )}
+            {operator && (
+              <p className="font-data-mono text-data-mono text-on-surface-variant">
+                Served by: {operator}
+              </p>
+            )}
           </div>
           <div className="my-4 border-t border-dashed border-outline-variant" />
           <div className="flex flex-col gap-1.5">

@@ -510,6 +510,9 @@ export function HistoryPage() {
           tax={selected!.tax_amount}
           paymentMethod={selected!.payment_method}
           payments={reprintPayments}
+          timestamp={selected!.timestamp}
+          patientName={selected!.patient_name}
+          operator={selected!.operator}
           onClose={() => setShowReprint(false)}
         />
       )}

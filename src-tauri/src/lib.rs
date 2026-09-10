@@ -3320,6 +3320,10 @@ pub struct EscposReceipt {
     pharmacy_name: String,
     receipt_no: String,
     timestamp: String,
+    #[serde(default)]
+    customer: Option<String>,
+    #[serde(default)]
+    cashier: Option<String>,
     lines: Vec<EscposLine>,
     subtotal: String,
     discount: Option<String>,
@@ -3378,6 +3382,12 @@ fn build_escpos_bytes(r: &EscposReceipt, width: usize) -> Vec<u8> {
     big_off(&mut out);
     text(&mut out, &r.receipt_no);
     text(&mut out, &r.timestamp);
+    if let Some(c) = r.customer.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        text(&mut out, &format!("Customer: {c}"));
+    }
+    if let Some(o) = r.cashier.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        text(&mut out, &format!("Served by: {o}"));
+    }
     left(&mut out);
 
     for l in &r.lines {

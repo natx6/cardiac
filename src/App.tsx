@@ -191,6 +191,25 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
+  // FDA catalog refresh progress: subscribed once here (App never unmounts),
+  // so switching tabs mid-update can't lose the progress bar or the result.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/event").then(({ listen }) =>
+      listen<{
+        current: number;
+        total: number;
+        page: number;
+        totalPages: number;
+      }>("fda-progress", (e) => useStore.getState().setFdaProgress(e.payload)).then(
+        (fn) => (unlisten = fn),
+      ),
+    );
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
   // WebKitGTK quirk: the native date-picker calendar on <input type="date">
   // only closes via Esc or picking a day — an outside click leaves it open.
   // Blur the focused date input on any click elsewhere; the popup follows

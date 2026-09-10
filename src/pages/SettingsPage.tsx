@@ -11,7 +11,6 @@ import {
   restoreBackup,
   restoreFromDir,
   restartApp,
-  refreshFdaCatalog,
   listUsers,
   createUser,
   updateUser,
@@ -105,9 +104,8 @@ export function SettingsPage() {
   const [pinDriveRestore, setPinDriveRestore] = useState<string | null>(null);
 
   const [fdaCount, setFdaCount] = useState<number | null>(null);
-  const [fdaBusy, setFdaBusy] = useState(false);
-  const [fdaMsg, setFdaMsg] = useState("");
-  const [fdaProgress, setFdaProgress] = useState<{ current: number; total: number; page: number; totalPages: number } | null>(null);
+  /** Global refresh job (store) — survives tab switches, unlike local state. */
+  const fdaJob = useStore((s) => s.fdaJob);
   const loadFdaCount = async () => {
     try {
       const { initDb } = await import("../db");
@@ -121,19 +119,6 @@ export function SettingsPage() {
   useEffect(() => {
     void loadFdaCount();
   }, []);
-  useEffect(() => {
-    if (!fdaBusy) return;
-    let unlisten: (() => void) | undefined;
-    import("@tauri-apps/api/event").then(({ listen }) =>
-      listen<{ current: number; total: number; page: number; totalPages: number }>("fda-progress", (e) =>
-        setFdaProgress(e.payload),
-      ).then((fn) => (unlisten = fn)),
-    );
-    return () => {
-      unlisten?.();
-      setFdaProgress(null);
-    };
-  }, [fdaBusy]);
 
   useEffect(() => {
     if (!isManager) return;
@@ -758,44 +743,39 @@ export function SettingsPage() {
             </label>
             <button
               onClick={async () => {
-                setFdaBusy(true);
-                setFdaMsg("");
                 try {
-                  const n = await refreshFdaCatalog(
-                    currentUser?.display_name ?? null,
-                    currentUser?.role ?? null,
-                  );
+                  await useStore.getState().startFdaRefresh();
                   beep(true);
-                  setFdaMsg(`Updated — ${n.toLocaleString()} drugs. You can now type 2 letters in “Add Manual Item” to see matches.`);
                   await loadFdaCount();
-                } catch (e) {
-                  setFdaMsg(String(e).replace(/^Error: /, ""));
+                } catch {
                   beep(false);
-                } finally {
-                  setFdaBusy(false);
                 }
               }}
-              disabled={fdaBusy}
+              disabled={fdaJob.status === "running"}
+              title="Runs in the background — you can switch tabs, it keeps going until done"
               className="h-9 rounded border border-primary/40 bg-primary/5 px-4 text-label-md font-label-md text-primary hover:bg-primary/10 disabled:opacity-50"
             >
-              {fdaBusy ? "Updating… (30-60s, needs internet)" : "Update FDA catalog"}
+              {fdaJob.status === "running" ? "Updating… (30-60s, needs internet)" : "Update FDA catalog"}
             </button>
-            {fdaBusy && fdaProgress && (
+            {fdaJob.status === "running" && fdaJob.progress && (
               <div className="mt-2">
                 <div className="h-2 overflow-hidden rounded-full bg-surface-variant">
                   <div
                     className="h-full bg-primary transition-all"
                     style={{
-                      width: `${fdaProgress.total ? Math.round((fdaProgress.current / Math.max(1, fdaProgress.total)) * 100) : 0}%`,
+                      width: `${fdaJob.progress.total ? Math.round((fdaJob.progress.current / Math.max(1, fdaJob.progress.total)) * 100) : 0}%`,
                     }}
                   />
                 </div>
                 <p className="mt-1 font-data-mono text-[11px] text-on-surface-variant">
-                  {fdaProgress.current.toLocaleString()} / {fdaProgress.total.toLocaleString()} · page {fdaProgress.page} / {fdaProgress.totalPages || "…"}
+                  {fdaJob.progress.current.toLocaleString()} / {fdaJob.progress.total.toLocaleString()} · page {fdaJob.progress.page} / {fdaJob.progress.totalPages || "…"}
                 </p>
               </div>
             )}
-            {fdaMsg && <p className="mt-2 text-body-sm font-body-sm text-on-surface-variant">{fdaMsg}</p>}
+            {fdaJob.status === "running" && !fdaJob.progress && (
+              <p className="mt-2 text-body-sm font-body-sm text-on-surface-variant">Starting… switch tabs freely, it keeps going.</p>
+            )}
+            {fdaJob.message && fdaJob.status !== "running" && <p className="mt-2 text-body-sm font-body-sm text-on-surface-variant">{fdaJob.message}</p>}
           </div>
 
 

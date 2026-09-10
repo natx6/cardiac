@@ -1,7 +1,25 @@
 import { create } from "zustand";
 import type { CartLine, PageId, Patient, Product, Role } from "../types";
-import { loadOperators as dbLoadOperators, loadProducts, saveSetting } from "../db";
+import { loadOperators as dbLoadOperators, loadProducts, saveSetting, refreshFdaCatalog } from "../db";
 import type { AppUser, Operator } from "../db";
+
+/** Progress payload emitted by the Rust FDA refresh (fda-progress event). */
+export interface FdaProgress {
+  current: number;
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+/** Global FDA catalog refresh job. Lives in the store (not SettingsPage
+ * state) so switching tabs never kills it: the Rust command keeps running,
+ * progress keeps flowing via the App-level listener, and the result message
+ * is still here when the user comes back. */
+export interface FdaJob {
+  status: "idle" | "running" | "done" | "error";
+  progress: FdaProgress | null;
+  message: string;
+}
 
 interface AppState {
   page: PageId;
@@ -37,6 +55,8 @@ interface AppState {
   role: Role;
   /** Maximum per-sale discount % (manager-set ceiling, from settings). */
   maxDiscountPct: number;
+  /** FDA catalog refresh job — survives tab switches (see FdaJob). */
+  fdaJob: FdaJob;
 
   /** Deep-link target set when following a notification: the destination page
    * pulses the matching row. `n` is a nonce so re-clicking the same item
@@ -80,6 +100,12 @@ interface AppState {
     fdaAutocomplete: boolean;
   }>): void;
   setTourOpen(v: boolean): void;
+  /** FDA progress events land here (App-level listener, mounted once). */
+  setFdaProgress(p: FdaProgress | null): void;
+  /** Start the FDA catalog refresh unless one is already running. Resolves
+   * with the drug count; the job (progress + result message) stays in the
+   * store so tab switches can't lose it. */
+  startFdaRefresh(): Promise<number>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -201,6 +227,36 @@ export const useStore = create<AppState>((set, get) => ({
 
   applySettings: (s) => set({ ...s }),
   setTourOpen: (v) => set({ tourOpen: v }),
+  fdaJob: { status: "idle", progress: null, message: "" },
+  setFdaProgress: (p) =>
+    set((st) => ({
+      fdaJob: st.fdaJob.status === "running" ? { ...st.fdaJob, progress: p } : st.fdaJob,
+    })),
+  startFdaRefresh: async () => {
+    const st = get();
+    if (st.fdaJob.status === "running") {
+      throw new Error("Catalog update already running.");
+    }
+    set({ fdaJob: { status: "running", progress: null, message: "" } });
+    try {
+      const n = await refreshFdaCatalog(
+        st.currentUser?.display_name ?? st.operator ?? null,
+        st.currentUser?.role ?? null,
+      );
+      set({
+        fdaJob: {
+          status: "done",
+          progress: null,
+          message: `Updated — ${n.toLocaleString()} drugs. You can now type 2 letters in “Add Manual Item” to see matches.`,
+        },
+      });
+      return n;
+    } catch (e) {
+      const message = String(e).replace(/^Error: /, "");
+      set({ fdaJob: { status: "error", progress: null, message } });
+      throw e;
+    }
+  },
 }));
 
 /** Owner and manager pass every manager gate (voids, backups, PIN changes,

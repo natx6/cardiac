@@ -71,6 +71,9 @@ export function PosPage() {
     tax: number;
     method: string;
     payments: PaymentLine[];
+    timestamp: string;
+    patientName: string | null;
+    operatorName: string | null;
   } | null>(null);
   const [patientInput, setPatientInput] = useState("");
   const [patientHits, setPatientHits] = useState<{ id: number; name: string; phone: string | null }[]>([]);
@@ -165,6 +168,8 @@ export function PosPage() {
   };
 
   const onSaleComplete = async (r: SaleResult, payments: PaymentLine[]) => {
+    // Capture receipt header details BEFORE clearing the counter below.
+    const st = useStore.getState();
     setLastSale({
       result: r,
       lines: [...cart],
@@ -174,6 +179,9 @@ export function PosPage() {
       tax,
       method: payments.map((p) => p.method).join(" + "),
       payments,
+      timestamp: new Date().toLocaleString(),
+      patientName: patient?.name?.trim() || null,
+      operatorName: st.operator || null,
     });
     setPayMethod(null);
     // Remember the primary method so the next "Complete Sale" opens the same one.
@@ -826,6 +834,9 @@ export function PosPage() {
           tax={lastSale.tax}
           paymentMethod={lastSale.method}
           payments={lastSale.payments}
+          timestamp={lastSale.timestamp}
+          patientName={lastSale.patientName}
+          operator={lastSale.operatorName}
           onClose={() => setLastSale(null)}
         />
       )}

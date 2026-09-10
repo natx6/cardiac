@@ -479,6 +479,8 @@ export interface ThermalReceipt {
   pharmacy_name: string;
   receipt_no: string;
   timestamp: string;
+  customer?: string | null;
+  cashier?: string | null;
   lines: { name: string; detail: string; amount: string }[];
   subtotal: string;
   discount?: string | null;

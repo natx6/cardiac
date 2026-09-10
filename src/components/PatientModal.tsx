@@ -43,6 +43,8 @@ export function PatientModal({ name, phone, onClose }: Props) {
     discountAmt?: number;
       method: string;
       payments?: PaymentLine[];
+      timestamp: string | null;
+      operatorName: string | null;
     } | null>(null);
 
   // Outstanding credit balance for THIS patient + the settle flow (moved here
@@ -89,9 +91,10 @@ export function PatientModal({ name, phone, onClose }: Props) {
       const [sale] = await db.select<
         { id: number; receipt_no: string; total_amount: number; payment_method: string;
           change_given: number | null; subtotal: number | null; discount_amount: number | null;
-          tax_amount: number | null }[]
+          tax_amount: number | null; timestamp: string; operator: string | null }[]
       >(`SELECT id, receipt_no, total_amount, payment_method,
-                change_given, subtotal, discount_amount, tax_amount
+                change_given, subtotal, discount_amount, tax_amount,
+                timestamp, operator
          FROM sales WHERE receipt_no = $1`, [
         receiptNo,
       ]);
@@ -132,6 +135,8 @@ export function PatientModal({ name, phone, onClose }: Props) {
         discountPct,
         discountAmt,
         method: sale.payment_method,
+        timestamp: sale.timestamp,
+        operatorName: sale.operator,
         payments: pays.length
           ? pays.map((p) => ({
               method: p.method as PaymentMethod,
@@ -382,6 +387,9 @@ export function PatientModal({ name, phone, onClose }: Props) {
           discountAmt={reprint.discountAmt}
           paymentMethod={reprint.method}
           payments={reprint.payments}
+          timestamp={reprint.timestamp}
+          patientName={name}
+          operator={reprint.operatorName}
           onClose={() => setReprint(null)}
         />
       )}

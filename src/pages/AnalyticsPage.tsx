@@ -409,6 +409,9 @@ export function AnalyticsPage() {
     discountAmt?: number;
     method: string;
     payments?: PaymentLine[];
+    timestamp: string | null;
+    patientName: string | null;
+    operatorName: string | null;
   } | null>(null);
 
   const { from: rawFrom, to: rawTo } = useMemo(
@@ -692,9 +695,11 @@ export function AnalyticsPage() {
       const [sale] = await db.select<
         { id: number; receipt_no: string; total_amount: number; payment_method: string;
           change_given: number | null; subtotal: number | null; discount_amount: number | null;
-          tax_amount: number | null }[]
+          tax_amount: number | null; timestamp: string; patient_name: string | null;
+          operator: string | null }[]
       >(`SELECT id, receipt_no, total_amount, payment_method,
-                change_given, subtotal, discount_amount, tax_amount
+                change_given, subtotal, discount_amount, tax_amount,
+                timestamp, patient_name, operator
          FROM sales WHERE receipt_no = $1`, [
         receiptNo,
       ]);
@@ -736,6 +741,9 @@ export function AnalyticsPage() {
         discountPct,
         discountAmt,
         method: sale.payment_method,
+        timestamp: sale.timestamp,
+        patientName: sale.patient_name,
+        operatorName: sale.operator,
         payments: pays.length
           ? pays.map((p) => ({
               method: p.method as PaymentMethod,
@@ -1452,6 +1460,9 @@ export function AnalyticsPage() {
           discountAmt={reprint.discountAmt}
           paymentMethod={reprint.method}
           payments={reprint.payments}
+          timestamp={reprint.timestamp}
+          patientName={reprint.patientName}
+          operator={reprint.operatorName}
           onClose={() => setReprint(null)}
         />
       )}
