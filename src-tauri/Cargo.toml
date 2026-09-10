@@ -1,6 +1,6 @@
 [package]
 name = "cardiac"
-version = "0.4.15"
+version = "0.4.16"
 description = "Cardiac Pharmacy Management System"
 edition = "2021"
 
