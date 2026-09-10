@@ -264,6 +264,8 @@ export function AnalyticsPage() {
   const [customTo, setCustomTo] = useState("");
   const [opFilter, setOpFilter] = useState("All");
   const [methodFilter, setMethodFilter] = useState("All");
+  /** Financial (money in/out) vs Stock (what's on the shelf). */
+  const [reportTab, setReportTab] = useState<"financial" | "stock">("financial");
   const [report, setReport] = useState<Report | null>(null);
   const [err, setErr] = useState("");
   const [backupPath, setBackupPath] = useState("");
@@ -799,6 +801,20 @@ export function AnalyticsPage() {
           <p className="text-body-md font-body-md text-on-surface-variant">
             Sales, operators, categories, and stock — all local.
           </p>
+          <div className="mt-3 flex w-fit rounded-full border border-outline-variant bg-surface p-1">
+            <button
+              onClick={() => setReportTab("financial")}
+              className={`rounded-full px-4 py-1 text-label-md font-label-md ${reportTab === "financial" ? "bg-primary text-on-primary" : "text-on-surface-variant hover:text-on-surface"}`}
+            >
+              Financial
+            </button>
+            <button
+              onClick={() => setReportTab("stock")}
+              className={`rounded-full px-4 py-1 text-label-md font-label-md ${reportTab === "stock" ? "bg-primary text-on-primary" : "text-on-surface-variant hover:text-on-surface"}`}
+            >
+              Stock
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <select
@@ -910,6 +926,8 @@ export function AnalyticsPage() {
         </p>
       )}
 
+      {reportTab === "financial" && (
+      <>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {kpis.map((k) => (
           <div key={k.label} className={`rounded border border-outline-variant bg-surface p-3 ${k.negative ? "border-error/30 bg-error/5" : ""}`}>
@@ -1325,6 +1343,28 @@ export function AnalyticsPage() {
           )}
         </div>
       </div>
+      </>
+      )}
+
+      {reportTab === "stock" && (
+      <>
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: "Out of stock", n: products.filter((p) => p.stock_qty <= 0).length, alert: true },
+          { label: "Low stock", n: lowStock.length, alert: lowStock.length > 0 },
+          { label: "Expiring ≤ 60 days", n: expiring.length, alert: expiring.length > 0 },
+          { label: "Expired", n: expired.length, alert: expired.length > 0 },
+        ].map((t) => (
+          <div key={t.label} className={`rounded border border-outline-variant bg-surface p-3 ${t.alert && t.n > 0 ? "border-error/30 bg-error/5" : ""}`}>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+              {t.label}
+            </span>
+            <p className={`mt-1 text-headline-lg font-headline-lg font-bold ${t.alert && t.n > 0 ? "text-error" : "text-on-surface"}`}>
+              {t.n}
+            </p>
+          </div>
+        ))}
+      </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         {[
@@ -1448,6 +1488,8 @@ export function AnalyticsPage() {
           </>
         )}
       </div>
+      )}
+      </>
       )}
 
       {reprint && (

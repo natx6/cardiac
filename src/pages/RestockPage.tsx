@@ -8,6 +8,7 @@ import { PrintPOModal } from "../components/PrintPOModal";
 import { PurchasePaymentModal } from "../components/PurchasePaymentModal";
 import {
   cancelPurchase,
+  initDb,
   isManagerPinSet,
   loadPurchases,
   loadPurchaseItems,
@@ -19,8 +20,12 @@ import {
 
 const PAY_METHODS = ["Cash", "Mobile Money", "Bank Transfer", "Cheque"] as const;
 
-function StatusPill({ p }: { p: Purchase }) {
-  const fullyPaid = p.total_amount > 0 && p.paid_amount >= p.total_amount - 0.005;
+/** What's still owed on an order (never negative — float dust clamped). */
+function owedOf(p: Purchase): number {
+  return Math.max(0, p.total_amount - p.paid_amount);
+}
+
+function StatusPill({ p }: { p: Purchase }) {  const fullyPaid = p.total_amount > 0 && p.paid_amount >= p.total_amount - 0.005;
   const partPaid = !fullyPaid && p.paid_amount > 0.005;
   let status: ReactNode;
   if (p.status === "Received")
@@ -84,11 +89,15 @@ export function RestockPage() {
   const [payOpen, setPayOpen] = useState(false);
   const [cancelArm, setCancelArm] = useState(false);
   const [recvBusy, setRecvBusy] = useState(false);
-  /** Pay-now capture on receive: amount + method (+PIN when configured). */
-  const [payNow, setPayNow] = useState("");
+  /** Money-with-delivery choice: full balance, a part payment, or on credit.
+   * One question in the shop's own words — no separate "pay now" box. */
+  const [payChoice, setPayChoice] = useState<"full" | "part" | "credit">("credit");
+  const [partAmt, setPartAmt] = useState("");
   const [payMethod, setPayMethod] = useState<string>("Cash");
   const [payPin, setPayPin] = useState("");
   const [pinRequired, setPinRequired] = useState(false);
+  /** Payment trail for the open order (date · amount · method · by whom). */
+  const [payHist, setPayHist] = useState<{ amount: number; method: string; operator: string | null; timestamp: string }[]>([]);
   const [msg, setMsg] = useState("");
   const [warn, setWarn] = useState("");
   const [detailErr, setDetailErr] = useState("");
@@ -125,13 +134,25 @@ export function RestockPage() {
     // ordered unit cost pre-filled as the invoice cost to compare against.
     setRecv(Object.fromEntries(items.map((it) => [it.id, String(it.quantity - it.qty_received)])));
     setInv(Object.fromEntries(items.map((it) => [it.id, String(it.unit_cost_net)])));
-    // Cash-on-the-spot purchases usually settle at delivery — prefill the
-    // pay-now box with the balance; credit starts at zero (pay later).
+    // The money question, pre-answered from the pay term: cash-on-delivery
+    // orders usually settle at the counter (full), credit ones later.
     const owed = Math.max(0, p.total_amount - p.paid_amount);
-    setPayNow(p.pay_term === "Cash" && owed > 0 ? String(Math.round(owed * 100) / 100) : "");
+    setPayChoice(p.pay_term === "Cash" && owed > 0 ? "full" : "credit");
+    setPartAmt("");
     setPayMethod("Cash");
     setPayPin("");
     setRecvBusy(false);
+    try {
+      const d = await initDb();
+      setPayHist(
+        await d.select<{ amount: number; method: string; operator: string | null; timestamp: string }[]>(
+          "SELECT amount, method, operator, timestamp FROM purchase_payments WHERE purchase_id = $1 ORDER BY id",
+          [p.id],
+        ),
+      );
+    } catch {
+      setPayHist([]);
+    }
   };
 
   const doReceive = async () => {
@@ -154,7 +175,11 @@ export function RestockPage() {
       })
       .filter((l) => l.qty > 0);
     if (lines.length === 0) return;
-    const payAmt = Math.max(0, Number(payNow) || 0);
+    // The money choice maps to one amount: full balance, the typed part, or
+    // nothing on credit. Clamped to what's actually owed.
+    const owedNow = Math.max(0, detail.p.total_amount - detail.p.paid_amount);
+    const payAmt =
+      payChoice === "full" ? owedNow : payChoice === "part" ? Math.max(0, Number(partAmt) || 0) : 0;
     if (payAmt > 0 && pinRequired && payPin.trim().length < 4) {
       setDetailErr("Manager PIN required to pay the supplier on the spot.");
       beep(false);
@@ -193,8 +218,8 @@ export function RestockPage() {
                 : " · fully paid";
           } catch (pe) {
             // Stock already landed — surface the failure honestly; the
-            // balance stays and Record payment remains available.
-            payMsg = ` · payment failed (${String(pe).replace(/^Error: /, "")}) — use Record payment`;
+            // balance stays and Pay balance remains available.
+            payMsg = ` · payment failed (${String(pe).replace(/^Error: /, "")}) — use Pay balance`;
           }
         }
       }
@@ -484,49 +509,101 @@ export function RestockPage() {
                 </p>
                 <p className="text-body-sm text-on-surface-variant">
                   Paid {fmtMoney(detail.p.paid_amount)}
-                  {detail.p.paid_amount >= detail.p.total_amount - 0.005
+                  {owedOf(detail.p) <= 0.005
                     ? " · Fully paid"
-                    : ` · Balance ${fmtMoney(detail.p.total_amount - detail.p.paid_amount)}`}
+                    : ` · Balance ${fmtMoney(owedOf(detail.p))}`}
                 </p>
-                {detail.p.status !== "Received" && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded border border-outline-variant bg-surface-container-low px-2 py-1.5">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
-                      Pay now
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={payNow}
-                      onChange={(e) => setPayNow(e.target.value)}
-                      placeholder="0.00"
-                      title="Cash paid to the supplier with this delivery — recorded together with the stock (0 = on credit)"
-                      className="h-7 w-24 rounded border border-outline-variant bg-surface-container-lowest px-1 text-right font-data-mono text-data-mono text-on-surface focus:border-primary focus:outline-none"
-                    />
-                    <select
-                      value={payMethod}
-                      onChange={(e) => setPayMethod(e.target.value)}
-                      className="h-7 rounded border border-outline-variant bg-surface-container-lowest px-1 text-[12px] text-on-surface focus:border-primary focus:outline-none"
-                    >
-                      {PAY_METHODS.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                    {pinRequired && (
+                {payHist.length > 0 && (
+                  <div className="mt-2 rounded border border-outline-variant bg-surface-container-low px-2 py-1.5">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                      Payments so far
+                    </p>
+                    {payHist.map((h, i) => (
+                      <p key={i} className="font-data-mono text-[12px] text-on-surface-variant">
+                        {h.timestamp.slice(0, 16)} · {fmtMoney(h.amount)} · {h.method}
+                        {h.operator ? ` · ${h.operator}` : ""}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {detail.p.status !== "Received" && owedOf(detail.p) > 0.005 && (
+                  <div className="mt-2 rounded border border-outline-variant bg-surface-container-low px-2 py-1.5">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                      Money with this delivery
+                    </p>
+                    <label className="mt-1 flex cursor-pointer items-center gap-2 text-body-sm text-on-surface">
                       <input
-                        type="password"
-                        inputMode="numeric"
-                        value={payPin}
-                        onChange={(e) => setPayPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
-                        placeholder="PIN"
-                        aria-label="Manager PIN"
-                        title="Manager PIN — required for supplier payments"
-                        className="h-7 w-20 rounded border border-outline-variant bg-surface-container-lowest px-1 text-center font-data-mono text-data-mono tracking-[0.2em] focus:border-primary focus:outline-none"
+                        type="radio"
+                        checked={payChoice === "full"}
+                        onChange={() => setPayChoice("full")}
+                        className="accent-primary"
                       />
+                      Paid in full — {fmtMoney(owedOf(detail.p))}
+                    </label>
+                    <label className="mt-1 flex cursor-pointer items-center gap-2 text-body-sm text-on-surface">
+                      <input
+                        type="radio"
+                        checked={payChoice === "part"}
+                        onChange={() => setPayChoice("part")}
+                        className="accent-primary"
+                      />
+                      <span>Part payment</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={partAmt}
+                        onChange={(e) => {
+                          setPartAmt(e.target.value);
+                          setPayChoice("part");
+                        }}
+                        onFocus={() => setPayChoice("part")}
+                        placeholder="0.00"
+                        className="h-7 w-24 rounded border border-outline-variant bg-surface-container-lowest px-1 text-right font-data-mono text-data-mono text-on-surface focus:border-primary focus:outline-none"
+                      />
+                    </label>
+                    <label className="mt-1 flex cursor-pointer items-center gap-2 text-body-sm text-on-surface">
+                      <input
+                        type="radio"
+                        checked={payChoice === "credit"}
+                        onChange={() => setPayChoice("credit")}
+                        className="accent-primary"
+                      />
+                      On credit — nothing now
+                    </label>
+                    {payChoice !== "credit" && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <select
+                          value={payMethod}
+                          onChange={(e) => setPayMethod(e.target.value)}
+                          className="h-7 rounded border border-outline-variant bg-surface-container-lowest px-1 text-[12px] text-on-surface focus:border-primary focus:outline-none"
+                        >
+                          {PAY_METHODS.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                        {pinRequired && (
+                          <input
+                            type="password"
+                            inputMode="numeric"
+                            value={payPin}
+                            onChange={(e) => setPayPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                            placeholder="PIN"
+                            aria-label="Manager PIN"
+                            title="Manager PIN — required for supplier payments"
+                            className="h-7 w-20 rounded border border-outline-variant bg-surface-container-lowest px-1 text-center font-data-mono text-data-mono tracking-[0.2em] focus:border-primary focus:outline-none"
+                          />
+                        )}
+                      </div>
                     )}
                   </div>
+                )}
+                {detail.p.status !== "Received" && owedOf(detail.p) <= 0.005 && (
+                  <p className="mt-2 text-body-sm text-on-surface-variant">
+                    Fully paid — receiving only adds stock.
+                  </p>
                 )}
               </div>
               <div className="flex items-center gap-3">
@@ -543,13 +620,13 @@ export function RestockPage() {
                 >
                   Close
                 </button>
-                {detail.p.paid_amount < detail.p.total_amount && (
+                {owedOf(detail.p) > 0.005 && (
                   <button
                     onClick={() => setPayOpen(true)}
                     className="flex items-center gap-2 rounded border border-primary/40 bg-primary/5 px-4 py-2 text-label-md font-label-md text-primary hover:bg-primary/10"
                   >
                     <span className="material-symbols-outlined text-[18px]">payments</span>
-                    Record payment
+                    Pay balance
                   </button>
                 )}
                 {detail.p.status !== "Received" && (
@@ -560,7 +637,19 @@ export function RestockPage() {
                       className="flex items-center gap-2 rounded bg-primary px-6 py-2 text-label-md font-label-md text-on-primary shadow-sm hover:bg-on-primary-fixed-variant disabled:opacity-50"
                     >
                       <span className="material-symbols-outlined text-[18px]">inventory_2</span>
-                      {recvBusy ? "Receiving…" : "Receive & Add to Stock"}
+                      {recvBusy
+                        ? "Receiving…"
+                        : (() => {
+                            const preview =
+                              payChoice === "full"
+                                ? owedOf(detail.p)
+                                : payChoice === "part"
+                                  ? Math.min(Math.max(0, Number(partAmt) || 0), owedOf(detail.p))
+                                  : 0;
+                            return preview > 0.005
+                              ? `Receive & record ${fmtMoney(preview)}`
+                              : "Receive (on credit)";
+                          })()}
                     </button>
                   </Tip>
                 )}
